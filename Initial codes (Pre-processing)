@@ -1,93 +1,110 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns # Often used for plots, good to include
+import seaborn as sns
 import statsmodels.api as sm
+
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.stattools import adfuller
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from scipy.stats import probplot # For Q-Q plot
+from scipy.stats import probplot 
 
-# --- 1. Data Loading and Initial Filtering ---
-print("--- Step 1: Data Loading and Initial Filtering ---")
-df = pd.read_csv("1810000401-eng-2.csv", low_memory=False)
+
+##### 1: DATA LOADING AND INITIAL FILTERING
+
+- Demonstrates a data loading and preprocessing workflow for timeseries analysis using pandas. 
+- Begins by reading a CSV file then filters the dataframe to include only rows where "GEO" column is "Canada" and "Products and product gropups" is "All items" and "UOM (unit of measure) is "2002=100". This ensures that analysis focuses on specific geographic region, product group, and unit standard. 
+- The code then converts the "REF_DATE" column from a string to a datetime object using the forman "%Y-%m", which represents year and month. The data frame is then further filtered to include only records from Jan 2015 to Jan 2025. 
+- The code then selects only "REF_DATE" and "VALUE" columns, discarding any others that are not needed for the analysis. It then renames these columns to "date" and "cpi" and sets "date" as the DataFrame index. "asfreq" method is called to ensure the date has a monthly frequency. 
+
+
+df = pd.read_csv("18100004.csv")
 
 df = df[
-    (df["GEO"] == "Canada") &
-    (df["Products and product groups"] == "All-items") &
-    (df["UOM"] == "2002=100")
+        (df["GEO"] == "Canada")&
+        (df["Products and product groups"] == "All-items")&
+        (df["UOM"] == "2002=100")
 ]
 
 df["REF_DATE"] = pd.to_datetime(df["REF_DATE"], format="%Y-%m")
 df = df[(df["REF_DATE"] >= "2015-01-01") & (df["REF_DATE"] <= "2025-01-31")]
-df = df[["REF_DATE", "VALUE"]].rename(columns={"REF_DATE": "date", "VALUE": "cpi"})
+df = df[["REF_DATE", "VALUE"]]
+df = df.rename(columns={"REF_DATE": "date", "VALUE": "cpi"})
 df.set_index("date", inplace=True)
-df = df.asfreq("MS") # Ensure monthly frequency
+df = df.asfreq("MS") #monthly frequency
 
 print(f"Initial CPI data loaded. Shape: {df.shape}")
 print("First 5 rows of CPI data:")
 print(df.head())
 
-# --- 2. Log-transform and Differencing (Inflation Series Creation) ---
-print("\n--- Step 2: Log-transform and Differencing ---")
+##### 2. Log-transform and Differencing (Inflation Series Creation)
+- This code block prepares the CPI data for time series analysis by transforming and differencing the data. First, it creates a new column "log_cpi" by applying natural logarith to the "cpi" values. Taking the logarithm is a common preprocessing step in time series analysis because it helps stabilize the variance and can make trends more linear, which is beneficial for many statistical models. 
+- The code then calculates the first difference of the log-transformed CPI values using the .diff() method and stores the result in a new column called "log_diff". This operation computes the change in the log CPI from one month to the next, effectively capturing the monthly inflation rate in log terms. Differencing is a standard technique to make a time series stationary, which is often a requirement for many forecasting models. 
+- The code then removes any rows where "log_diff" value is missing (NaN) using dropna. This is necessary because the first difference will always produce a NaN for the very first row (since there is no previous value to subtract from), and any missing values in the original data would also result in NaNs after differencing. By droppping these rows, the DataFrame is cleaned and ready for further analysis or modeling. 
+
 df["log_cpi"] = np.log(df["cpi"])
-df["log_diff"] = df["log_cpi"].diff() # This is our target variable: monthly inflation
-# Drop the first NaN from differencing
-df.dropna(subset=['log_diff'], inplace=True)
+df["log_diff"] = df["log_cpi"].diff() #target variable
+df.dropna(subset=["log_diff"], inplace=True)
 
-print(f"Log-differenced CPI (inflation) series created. Shape: {df.shape}")
-print("First 5 rows of log_diff:")
-print(df['log_diff'].head())
+print(f"Log-differenced CPI series created. Shape: {df.shape}")
+print("First 5 rows of log_diff")
+print(df['log_diff']. head())
 
-# --- 3. Comprehensive Feature Engineering (All features lagged to prevent leakage) ---
-print("\n--- Step 3: Comprehensive Feature Engineering ---")
 
-# Add lag features (up to 12 months, starting from lag_1)
-for lag in range(1, 13):
+##### 3. Feature Engineering
+- This code block performs feature engineering on the time series data to prepare it for the machine learning models. First, it creates lag features for the target variable "log_diff" for the previous 1 to 12 months. Each new column (lag_1, lag_2...) contains the value of log_diff from that many months prior, allowing models to learn past values. 
+- The code adds rolling window statistics to capture recent trends and volatility. It calculates the rolling mean and rolling standard deviation of log_diff over 3,6, and 12 months, each shifted by one period to prevent data leakage (using future information). These features help models understand local averages and variability, which are important for time series forecasting. 
+- To account for seasonality, the code introduces two Fourier terms - sin_12 and cos_12 based on a 12-month cycle. These terms allow models to capture repeating annual patterns in the data, which are common in economic time series.
+- Because lagging and rolling operations introduce missing values at the start of the series, the code records the initial number of rows, drops all rows with any NaN values, and then prints how many rows were removed. This ensures the final dataset is clean and ready for modeling. 
+- Finally it dynamically creates a list of all feature columns that will be used for training, including all lag, rolling mean, rolling standard deviation, and Fourier term columns. This approach makes the feature selection process flexible and robust for downstream modeling tasks. 
+
+#Add lag features upto 12 months starting from lag_1
+for lag in range(1,13):
     df[f'lag_{lag}'] = df['log_diff'].shift(lag)
 
-# Add rolling mean features (all shifted by 1 to prevent data leakage)
+#Add rolling mean features shifted by 1 to prevent data leakage
 df['rolling_mean_3_lag1'] = df['log_diff'].rolling(window=3).mean().shift(1)
 df['rolling_mean_6_lag1'] = df['log_diff'].rolling(window=6).mean().shift(1)
 df['rolling_mean_12_lag1'] = df['log_diff'].rolling(window=12).mean().shift(1)
 
-# Add rolling standard deviation features (all shifted by 1 to prevent data leakage)
+#Add rolling standard deviation features shifted by 1 to prevent data leakage
 df['rolling_std_3_lag1'] = df['log_diff'].rolling(window=3).std().shift(1)
 df['rolling_std_6_lag1'] = df['log_diff'].rolling(window=6).std().shift(1)
 df['rolling_std_12_lag1'] = df['log_diff'].rolling(window=12).std().shift(1)
 
-# Fourier terms for seasonality (period = 12 months)
-# Ensure 't' aligns with the current df index after prior dropna
+#Fourier terms for seasonality (12 months)
 t = np.arange(len(df.index))
-df['sin_12'] = np.sin(2 * np.pi * t / 12)
-df['cos_12'] = np.cos(2 * np.pi * t / 12)
+df['sin_12'] = np.sin(2* np.pi * t/12)
+df['cos_12'] = np.cos(2* np.pi * t/12)
 
-# Drop any remaining rows with NaN values introduced by lagging/rolling operations
-# This is crucial for the start date of your final dataset
+#Drop remaining rows with NaN values introduced by lagging/rolling
 initial_rows = df.shape[0]
 df.dropna(inplace=True)
 final_rows = df.shape[0]
+
 print(f"Dropped {initial_rows - final_rows} rows due to NaN values from feature engineering.")
 print(f"DataFrame shape after all feature engineering and dropna: {df.shape}")
-print(f"Data starts from: {df.index.min().strftime('%Y-%m')}") # Should be 2016-02
+print(f"Data starts from: {df.index.min().strftime('%Y-%m')}") #should be 2016-02 (if not restart all and re-run)
 
-# Define all features that will be used for training dynamically
-features = [col for col in df.columns if col.startswith('lag_') or \
+#Define all feature that wil be used for training dynamically
+features = [col for col in df.columns if col.startswith('lag_') or\
             col.startswith('rolling_mean_') or \
-            col.startswith('rolling_std_') or \
+            col. startswith('rolling_std_')or \
             col in ['sin_12', 'cos_12']]
 
-# --- 4. Feature Standardization ---
-print("\n--- Step 4: Feature Standardization ---")
+##### 4. Feature Standardization
+- This code block standardizes the feature columns in the DataFrame. Using standardscaler, features are transformed to have mean 0 and standard deviation of 1. This is important in ML to maintain input features on a similar scale.
+- Then the mean and standard deviation of each feature is computed and data is scaled
+
 scaler = StandardScaler()
-df_scaled = df.copy() # Work on a copy to keep original for target
+df_scaled = df.copy() #to avoid altering the original data
 df_scaled[features] = scaler.fit_transform(df_scaled[features])
 
-X = df_scaled[features] # Features for training
-y = df["log_diff"]      # Target variable (original, unscaled log_diff)
+X = df_scaled[features] #training features
+y = df["log_diff"] #target variable (original, unscaled)
 
 print(f"Shape of X (features): {X.shape}")
 print(f"Shape of y (target): {y.shape}")
@@ -96,82 +113,33 @@ print(X.head())
 print("\nSample of y (target) head:")
 print(y.head())
 
-# --- 5. Train-Test Split (Last 24 months as test set) ---
-print("\n--- Step 5: Train-Test Split ---")
-test_set_size = 24
-train_size = len(X) - test_set_size
-X_train, X_test = X.iloc[:train_size], X.iloc[train_size:]
-y_train, y_test = y.iloc[:train_size], y.iloc[train_size:]
+# Generate comprehensive summary statistics
+print("\n--- Summary Statistics for All Variables ---")
+summary_stats = df.describe()
+print(summary_stats)
 
-print(f"Training set size: {len(X_train)} samples ({y_train.index.min().strftime('%Y-%m')} to {y_train.index.max().strftime('%Y-%m')})")
-print(f"Testing set size: {len(X_test)} samples ({y_test.index.min().strftime('%Y-%m')} to {y_test.index.max().strftime('%Y-%m')})")
+# Focus on key variables for detailed analysis
+key_variables = ['lag_1', 'lag_2', 'lag_3', 'rolling_mean_3_lag1', 'rolling_std_3_lag1', 'log_diff']
+print(f"\n--- Summary Statistics for Key Variables ---")
+key_stats = df[key_variables].describe()
+print(key_stats)
 
-# --- 6. Stationarity and Distribution Analysis Plots & Tests ---
-print("\n--- Step 6: Stationarity and Distribution Analysis ---")
+# Generate summary for standardized features
+print(f"\n--- Summary Statistics for Standardized Features ---")
+standardized_features = ['lag_1', 'lag_2', 'lag_3', 'rolling_mean_3_lag1', 'rolling_std_3_lag1']
+std_stats = df_scaled[standardized_features].describe()
+print(std_stats)
 
-# Plot monthly inflation rate
-plt.figure(figsize=(12, 5))
-df['log_diff'].plot(title="Monthly Log-Differenced CPI (Inflation Rate)", color='darkblue')
-plt.ylabel("Inflation Rate (log diff)")
-plt.xlabel("Date")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+# Additional analysis for better understanding
+print(f"\n--- Dataset Overview ---")
+print(f"Total observations: {len(df)}")
+print(f"Date range: {df.index.min().strftime('%Y-%m')} to {df.index.max().strftime('%Y-%m')}")
+print(f"Training period: {y_train.index.min().strftime('%Y-%m')} to {y_train.index.max().strftime('%Y-%m')} ({len(y_train)} months)")
+print(f"Testing period: {y_test.index.min().strftime('%Y-%m')} to {y_test.index.max().strftime('%Y-%m')} ({len(y_test)} months)")
 
-# Plot 12-month rolling standard deviation of inflation
-df["rolling_std_12_plot"] = df["log_diff"].rolling(window=12).std() # A temporary column for plotting
-plt.figure(figsize=(12, 5))
-df["rolling_std_12_plot"].plot(color="orange", title="12-Month Rolling Std Dev of Inflation (log-diff CPI)")
-plt.ylabel("Rolling Std Dev")
-plt.xlabel("Date")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-df.drop(columns=['rolling_std_12_plot'], inplace=True) # Clean up temporary column
-
-# Q-Q plot for normality check
-plt.figure(figsize=(6, 6))
-probplot(df['log_diff'], dist="norm", plot=plt)
-plt.title("Q-Q Plot of Log-Differenced CPI")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-# ACF for Raw CPI Index (Non-stationarity check)
-raw_cpi = df['cpi'].dropna() # Use original cpi from df
-fig, ax = plt.subplots(figsize=(12, 5))
-plot_acf(raw_cpi, lags=25, alpha=0.05, ax=ax)
-plt.title("Autocorrelation Function (ACF) - Raw CPI Index (2015–2025)")
-plt.xlabel("Lag")
-plt.ylabel("Autocorrelation")
-plt.tight_layout()
-plt.grid(True)
-plt.show()
-
-# ACF and PACF for the inflation series (log_diff)
-fig, axes = plt.subplots(2, 1, figsize=(12, 8))
-plot_acf(df['log_diff'], lags=24, ax=axes[0], title='Autocorrelation Function (ACF) of Inflation')
-plot_pacf(df['log_diff'], lags=24, ax=axes[1], title='Partial Autocorrelation Function (PACF) of Inflation', method='ywm') # 'ywm' or 'ols'
-plt.tight_layout()
-plt.show()
-
-# Augmented Dickey-Fuller (ADF) Test for Stationarity
-print("\n--- Augmented Dickey-Fuller Test Results (for log_diff) ---")
-adf_test_result = adfuller(df['log_diff'])
-
-print('ADF Statistic:', adf_test_result[0])
-print('p-value:', adf_test_result[1])
-print('Number of Lags Used:', adf_test_result[2])
-print('Number of Observations Used:', adf_test_result[3])
-print('Critical Values:')
-for key, value in adf_test_result[4].items():
-    print(f'\t{key}: {value}')
-
-if adf_test_result[1] <= 0.05:
-    print("\nConclusion: The p-value is <= 0.05. We reject the null hypothesis.")
-    print("This suggests that the Monthly Log-Differenced CPI (Inflation Rate) series is stationary.")
-else:
-    print("\nConclusion: The p-value is > 0.05. We fail to reject the null hypothesis.")
-    print("This suggests that the Monthly Log-Differenced CPI (Inflation Rate) series is likely non-stationary.")
-
-
+# Inflation rate statistics in percentage terms
+print(f"\n--- Inflation Rate Statistics (Monthly %) ---")
+print(f"Mean monthly inflation: {df['log_diff'].mean()*100:.3f}%")
+print(f"Standard deviation: {df['log_diff'].std()*100:.3f}%")
+print(f"Minimum (deflation): {df['log_diff'].min()*100:.3f}%")
+print(f"Maximum (high inflation): {df['log_diff'].max()*100:.3f}%")
