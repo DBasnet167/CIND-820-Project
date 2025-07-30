@@ -129,17 +129,3 @@ print(f"\n--- Summary Statistics for Standardized Features ---")
 standardized_features = ['lag_1', 'lag_2', 'lag_3', 'rolling_mean_3_lag1', 'rolling_std_3_lag1']
 std_stats = df_scaled[standardized_features].describe()
 print(std_stats)
-
-# Additional analysis for better understanding
-print(f"\n--- Dataset Overview ---")
-print(f"Total observations: {len(df)}")
-print(f"Date range: {df.index.min().strftime('%Y-%m')} to {df.index.max().strftime('%Y-%m')}")
-print(f"Training period: {y_train.index.min().strftime('%Y-%m')} to {y_train.index.max().strftime('%Y-%m')} ({len(y_train)} months)")
-print(f"Testing period: {y_test.index.min().strftime('%Y-%m')} to {y_test.index.max().strftime('%Y-%m')} ({len(y_test)} months)")
-
-# Inflation rate statistics in percentage terms
-print(f"\n--- Inflation Rate Statistics (Monthly %) ---")
-print(f"Mean monthly inflation: {df['log_diff'].mean()*100:.3f}%")
-print(f"Standard deviation: {df['log_diff'].std()*100:.3f}%")
-print(f"Minimum (deflation): {df['log_diff'].min()*100:.3f}%")
-print(f"Maximum (high inflation): {df['log_diff'].max()*100:.3f}%")
