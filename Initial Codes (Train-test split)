@@ -71,3 +71,17 @@ print('Number of Observations Used:', adf_test_result[3])
 print('Critical Values:')
 for key, value in adf_test_result[4].items():
     print(f'\t{key}: {value}')
+
+# Additional analysis for better understanding
+print(f"\n--- Dataset Overview ---")
+print(f"Total observations: {len(df)}")
+print(f"Date range: {df.index.min().strftime('%Y-%m')} to {df.index.max().strftime('%Y-%m')}")
+print(f"Training period: {y_train.index.min().strftime('%Y-%m')} to {y_train.index.max().strftime('%Y-%m')} ({len(y_train)} months)")
+print(f"Testing period: {y_test.index.min().strftime('%Y-%m')} to {y_test.index.max().strftime('%Y-%m')} ({len(y_test)} months)")
+
+# Inflation rate statistics in percentage terms
+print(f"\n--- Inflation Rate Statistics (Monthly %) ---")
+print(f"Mean monthly inflation: {df['log_diff'].mean()*100:.3f}%")
+print(f"Standard deviation: {df['log_diff'].std()*100:.3f}%")
+print(f"Minimum (deflation): {df['log_diff'].min()*100:.3f}%")
+print(f"Maximum (high inflation): {df['log_diff'].max()*100:.3f}%")
