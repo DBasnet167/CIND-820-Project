@@ -1,0 +1,73 @@
+##### 5. Train-test split (last 24 months as test set)
+- This code block performs a train-test split on the dataset, which is a crucial step in preparing data for machine learning. The variable test_set_size is set to 24, meaning last 24 samples will be reserved for testing the model's performance. The remaining are training size.
+- The code then uses pandas' ".iloc" index to split both the feature matrix (X) and the target vector (y) into training and testing sets. This approach preserves chronological order of the time series, which is essential to avoid data leakage from the future into the past - a common pitfall in time series forecasting. 
+
+test_set_size = 24
+train_size = len(X) - test_set_size
+X_train, X_test = X.iloc[:train_size], X.iloc[train_size:]
+y_train, y_test = y.iloc[:train_size], y.iloc[train_size:]
+
+print(f"Training set size: {len(X_train)} samples ({y_train.index.min().strftime('%Y-%m')} to {y_train.index.max().strftime('%Y-%m')})")
+print(f"Testing set size: {len(X_test)} samples ({y_test.index.min().strftime('%Y-%m')} to {y_test.index.max().strftime('%Y-%m')})")
+
+##### 6. Stationary and Distribution Analysis Plots & Tests
+
+# Plot monthly inflation rate
+plt.figure(figsize=(12, 5))
+df['log_diff'].plot(title="Monthly Log-Differenced CPI (Inflation Rate)", color='darkblue')
+plt.ylabel("Inflation Rate (log diff)")
+plt.xlabel("Date")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#Plot 12-month rolling standard deviation of inflation
+df["rolling_std_12_plot"] = df["log_diff"].rolling(window=12).std() # A temporary column for plotting
+plt.figure(figsize=(12, 5))
+df["rolling_std_12_plot"].plot(color="orange", title="12-Month Rolling Std Dev of Inflation (log-diff CPI)")
+plt.ylabel("Rolling Std Dev")
+plt.xlabel("Date")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+df.drop(columns=['rolling_std_12_plot'], inplace=True)
+
+#Q-Q plot for normality check
+plt.figure(figsize=(4, 4))
+probplot(df['log_diff'], dist="norm", plot=plt)
+plt.title("Q-Q Plot of Log-Differenced CPI")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#ACF for Raw CPI Index (Non-stationarity Check)
+raw_cpi = df['cpi'].dropna() # Use original cpi from df
+fig, ax = plt.subplots(figsize=(12, 5))
+plot_acf(raw_cpi, lags=25, alpha=0.05, ax=ax)
+plt.title("Autocorrelation Function (ACF) - Raw CPI Index (2015–2025)")
+plt.xlabel("Lag")
+plt.ylabel("Autocorrelation")
+plt.tight_layout()
+plt.grid(True)
+plt.show()
+
+# ACF and PACF for the inflation series (log_diff)
+fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+plot_acf(df['log_diff'], lags=24, ax=axes[0], title='Autocorrelation Function (ACF) of Inflation')
+plot_pacf(df['log_diff'], lags=24, ax=axes[1], title='Partial Autocorrelation Function (PACF) of Inflation', method='ywm') # 'ywm' or 'ols'
+plt.tight_layout()
+plt.show()
+
+- The p-value is <= 0.05. We reject the null hypothesis.
+This suggests that the Monthly Log-Differenced CPI (Inflation Rate) series is stationary.
+
+#Augmented Dickey-Fuller (ADF) test for stationarity
+adf_test_result = adfuller(df['log_diff'])
+
+print('ADF Statistic:', adf_test_result[0])
+print('p-value:', adf_test_result[1])
+print('Number of Lags Used:', adf_test_result[2])
+print('Number of Observations Used:', adf_test_result[3])
+print('Critical Values:')
+for key, value in adf_test_result[4].items():
+    print(f'\t{key}: {value}')
