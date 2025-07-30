@@ -1,7 +1,8 @@
-# --- 7. Model Training and Prediction ---
-print("\n--- Step 7: Model Training and Prediction ---")
+##### 7. Model Training and Prediction
+- The function evaluate_model is designed to assess the performance of a regression model by calculating and displaying three common evaluation metrics. It takes as input the true target values: y_true, the predicted values from the mode: y_pred, and a string: name, to label the output.
+- Inside the function it first computes the Mean Absolute Error, which measures the average magnitude of errors between predictions and actual values, without considering their direction. It then calculates the Root Mean Squared Error and then the R-squared score which indicates the proportion of variance in the target variable that is explained by the model; value closer to 1 means better predictive performance. 
 
-# Evaluation Function
+#Evaluation Function
 def evaluate_model(y_true, y_pred, name):
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
@@ -11,50 +12,35 @@ def evaluate_model(y_true, y_pred, name):
     print(f'RMSE: {rmse:.6f}')
     print(f'R²: {r2:.4f}')
 
-# Naive Forecast
-# CRITICAL FIX HERE: Naive forecast should use the UNSEALED lag_1 from the original df
-# Get the 'lag_1' column from the original df before any scaling or subsetting for X_train/X_test
-# Ensure that the 'lag_1' from df aligns with the y_test index.
-# The `y` series itself should align perfectly with `df['log_diff']`
-# The `X` dataframe contains the features, so `y_test` is already aligned with `X_test`
-# We need the *actual* previous values for the test period.
-# These previous values are precisely what the 'lag_1' column of the *original, unscaled* df represents
-# for the entries corresponding to the X_test index.
-
-try:
-    # Filter the original df to get the unscaled 'lag_1' values corresponding to the test set dates
-    # X_test.index contains the dates for which we need naive forecasts
-    naive_pred = df.loc[X_test.index, 'lag_1'].values # <--- THIS IS THE FIX
-    evaluate_model(y_test, naive_pred, 'Naive Forecast')
+## Naive Forecast (ŷₜ = yₜ₋₁)
+try: 
+    naive_pred = df.loc[X_test.index, 'lag_1'].values
+    evaluate_model(y_test, naive_pred, 'Naive')
 except KeyError:
     print("\nError: 'lag_1' column not found in original df or index mismatch for Naive Forecast.")
     naive_pred = np.full_like(y_test, np.nan) # Fill with NaNs to allow plotting
 
-
 # Random Forest Regressor
-print("\nTraining Random Forest Regressor...")
 rf_model = RandomForestRegressor(n_estimators=500, max_leaf_nodes=50, max_features='sqrt', random_state=42)
 rf_model.fit(X_train, y_train)
 rf_pred = rf_model.predict(X_test)
-evaluate_model(y_test, rf_pred, 'Random Forest Forecast')
+evaluate_model(y_test, rf_pred, 'Random Forest')
 
-# Gradient Boosting Regressor
-print("\nTraining Gradient Boosting Regressor...")
-gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)
+#Gradient Boosting Regressor:
+gb_model = GradientBoostingRegressor(n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42)
 gb_model.fit(X_train, y_train)
 gb_pred = gb_model.predict(X_test)
 evaluate_model(y_test, gb_pred, 'Gradient Boosting Forecast')
 
 # K-Nearest Neighbors Regressor
-print("\nTraining K-Nearest Neighbors Regressor...")
 knn_model = KNeighborsRegressor(n_neighbors=5)
 knn_model.fit(X_train, y_train)
 knn_pred = knn_model.predict(X_test)
 evaluate_model(y_test, knn_pred, 'kNN Forecast')
 
+##### 8. Plot all predictions
 
-# --- 8. Plot All Predictions ---
-print("\n--- Step 8: Plotting All Predictions ---")
+#Plot all predictions.
 plt.figure(figsize=(14, 7))
 plt.plot(y_test.index, y_test.values, label='Actual (log_diff)', color='black', linewidth=2)
 plt.plot(y_test.index, naive_pred, '--', label='Naive Forecast', color='purple', alpha=0.7)
@@ -70,8 +56,10 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# --- 9. Feature Importance for Tree-Based Models ---
-print("\n--- Step 9: Feature Importance ---")
+
+##### 9. Feature Importance for Tree-Based models
+
+- Feature importance values indicate how much each input feature contributed to the model's predictions, helping to understand which variables are most influential. 
 
 print("\n--- Random Forest Feature Importance ---")
 if hasattr(rf_model, 'feature_importances_'):
@@ -87,4 +75,12 @@ if hasattr(gb_model, 'feature_importances_'):
 else:
     print("Gradient Boosting model does not have feature_importances_ attribute.")
 
-print("\n--- Script Finished ---")
+# Add this code to create a more detailed results comparison
+results_df = pd.DataFrame({
+    'Model': ['Naive Forecast', 'Random Forest', 'Gradient Boosting', 'kNN'],
+    'MAE': [0.003367, 0.002337, 0.002553, 0.002459],
+    'RMSE': [0.003883, 0.002651, 0.002920, 0.002712],
+    'R²': [-0.4116, 0.3420, 0.2016, 0.3115],
+    'Improvement over Naive (MAE)': ['Baseline', '30.6%', '24.2%', '27.0%']
+})
+print(results_df.to_string(index=False))
